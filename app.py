@@ -9,7 +9,7 @@ import pytz
 import streamlit as st
 from playwright.async_api import Playwright, async_playwright, expect
 
-st.set_page_config(page_title="神姫バス 運行ナビ", page_icon="🚌", layout="centered")
+st.set_page_config(page_title="神姫バス 接近情報", page_icon="🚌", layout="centered")
 
 # タイムゾーン設定（クラウドサーバーでも確実に日本時間で検索するため）
 JST = pytz.timezone("Asia/Tokyo")
@@ -433,24 +433,24 @@ def render_bus_schedule():
                 place_str = bus["status"].get("place", "不明")
 
                 st.subheader(
-                    f"第{idx+1}便 | 系統: {bus['line']} （{bus['dest_stop']} 行）"
+                    f"{bus['line']} {bus['dest_stop']}"
                 )
 
                 c1, c2 = st.columns(2)
                 c1.metric(
-                    label=f"🚏 {st.session_state.start_stop} 発",
+                    label=f"{st.session_state.start_stop} 発",
                     value=dep_time,
                     delta=delay_str,
                     delta_color="inverse" if "遅れ" in delay_str else "normal",
                 )
                 c2.metric(
-                    label=f"🏁 {st.session_state.end_stop} 着", value=arr_time
+                    label=f"{st.session_state.end_stop} 着", value=arr_time
                 )
 
                 if place_str == "運行前":
-                    st.info("📍 **現在位置:** 運行前（始発待機中）")
+                    st.info("**現在位置:** 運行前（始発待機中）")
                 else:
-                    st.success(f"📍 **走行位置:** {place_str}")
+                    st.success(f"**走行位置:** {place_str}")
 
                 if bus["stops"]:
                     with st.expander("停車するバス停一覧を見る"):
