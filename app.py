@@ -345,7 +345,7 @@ if (
     st.session_state.last_results = None
 
 
-# バス情報のカードを描画する関数
+# バス情報のカードを描画する関数（ボタン類は外に出して重複エラーを防止）
 def draw_bus_cards(results, updated_info):
     st.caption(f"⏱ {updated_info} （20秒ごとに自動更新）")
 
@@ -400,14 +400,6 @@ def draw_bus_cards(results, updated_info):
                     with st.expander("停車するバス停一覧を見る"):
                         st.write(" → ".join(bus["stops"]))
 
-    col_btn, col_json = st.columns(2)
-    with col_btn:
-        if st.button("🔄 今すぐ手動更新", use_container_width=True):
-            st.rerun()
-    with col_json:
-        with st.popover("📄 JSONデータを見る", use_container_width=True):
-            st.json(results)
-
 
 # 20秒ごとに自動更新される領域
 @st.fragment(run_every="20s")
@@ -417,20 +409,31 @@ def render_bus_schedule():
     # メインのバス情報表示枠
     main_placeholder = st.empty()
 
-    # 1. すでに前回のデータがある場合は、通信中もそれを画面に残したままにする！
+    # 1. 前回のデータがある場合は、通信中もそれを画面に残したままにする
     if st.session_state.last_results is not None:
         with main_placeholder.container():
             draw_bus_cards(
                 st.session_state.last_results, st.session_state.last_updated_str
             )
 
-    # 2. 画面の右上にだけ小さく「🔄 更新中...」と出す（画面は邪魔しない）
+    # 2. 手動更新ボタンとJSON表示（ここは1回だけ描画するため重複エラーにならない）
+    col_btn, col_json = st.columns(2)
+    with col_btn:
+        if st.button("🔄 今すぐ手動更新", use_container_width=True, key="manual_refresh_btn"):
+            st.rerun()
+    with col_json:
+        with st.popover("📄 JSONデータを見る", use_container_width=True):
+            json_placeholder = st.empty()
+            if st.session_state.last_results is not None:
+                json_placeholder.json(st.session_state.last_results)
+
+    # 3. 画面の右上にだけ小さく「🔄 データ更新中...」と出す
     badge_placeholder.markdown(
         '<div class="corner-status">🔄 データ更新中...</div>',
         unsafe_allow_html=True,
     )
 
-    # 3. 裏でスクレイピングを実行
+    # 4. 裏でスクレイピングを実行
     worker = get_worker()
     t0 = time.perf_counter()
     try:
@@ -454,12 +457,13 @@ def render_bus_schedule():
             st.error(f"初回取得エラー: {e}")
         return
 
-    # 4. 取得が終わったら右上のバッジを消し、最新のデータにパッと描き換える
+    # 5. 取得が終わったら右上のバッジを消し、最新のデータにパッと描き換える
     badge_placeholder.empty()
     with main_placeholder.container():
         draw_bus_cards(
             st.session_state.last_results, st.session_state.last_updated_str
         )
+    json_placeholder.json(st.session_state.last_results)
 
 
 render_bus_schedule()
