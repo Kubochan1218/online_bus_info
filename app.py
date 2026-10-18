@@ -277,14 +277,48 @@ def get_worker():
     return PlaywrightWorker()
 
 
-# --- 4. スマホ向けUIと自動更新表示 ---
+# --- 4. スマホ向けUIと自動更新表示（画面が消えない改良版） ---
 st.title("🚌 神姫バス 接近情報")
 
-# 乗車・降車バス停の状態管理（ワンタップ入れ替え対応）
+# 【対策1】更新中に画面が半透明（薄暗く）なるのを防ぎ、右上に小さな通信中バッジを出すCSS
+st.markdown(
+    """
+    <style>
+    /* 更新中に既存の表示が薄暗く（半透明に）なるのを完全に防ぐ */
+    [data-stale="true"] {
+        opacity: 1 !important;
+        transition: none !important;
+    }
+    /* 画面右上に固定表示する小さなステータスバッジ */
+    .corner-status {
+        position: fixed;
+        top: 3.5rem;
+        right: 1rem;
+        z-index: 999999;
+        background-color: rgba(30, 30, 30, 0.85);
+        color: #ffffff;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        pointer-events: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# 乗車・降車バス停の状態管理
 if "start_stop" not in st.session_state:
     st.session_state.start_stop = "県立大工学部"
 if "end_stop" not in st.session_state:
     st.session_state.end_stop = "姫路駅（北口）"
+
+# 前回の取得結果を保持する変数（更新中に画面が消えるのを防ぐ）
+if "last_results" not in st.session_state:
+    st.session_state.last_results = None
+if "last_updated_str" not in st.session_state:
+    st.session_state.last_updated_str = None
 
 col_s1, col_s2, col_s3 = st.columns([4, 1, 4])
 with col_s1:
@@ -296,33 +330,26 @@ with col_s2:
             st.session_state.end_stop,
             st.session_state.start_stop,
         )
+        st.session_state.last_results = None  # バス停を変えたら表示をリセット
         st.rerun()
 with col_s3:
     end_input = st.text_input("降車バス停", value=st.session_state.end_stop)
 
-st.session_state.start_stop = start_input
-st.session_state.end_stop = end_input
+# 手動でバス停名を書き換えた場合もリセット
+if (
+    start_input != st.session_state.start_stop
+    or end_input != st.session_state.end_stop
+):
+    st.session_state.start_stop = start_input
+    st.session_state.end_stop = end_input
+    st.session_state.last_results = None
 
 
-# 20秒ごとに自動更新される領域（15s〜30sで自由に変更可能）
-@st.fragment(run_every="20s")
-def render_bus_schedule():
-    worker = get_worker()
-    t0 = time.perf_counter()
+# バス情報のカードを描画する関数
+def draw_bus_cards(results, updated_info):
+    st.caption(f"⏱ {updated_info} （20秒ごとに自動更新）")
 
-    with st.spinner("最新のバス位置を取得中..."):
-        try:
-            results = worker.fetch(st.session_state.start_stop, st.session_state.end_stop)
-            elapsed = time.perf_counter() - t0
-        except Exception as e:
-            st.error(f"取得エラーが発生しました（次回自動リトライします）: {e}")
-            return
-
-    now_str = datetime.now(JST).strftime('%H:%M:%S')
-    st.caption(f"⏱ 最終更新: {now_str} （所要時間: {elapsed:.1f}秒 / 20秒ごとに自動更新）")
-
-    # エラー・運行終了判定
-    first_info = results[0]['info'] if results else -9
+    first_info = results[0]["info"] if results else -9
     if first_info == 403:
         st.error("⚠️ サイトへのアクセスがタイムアウト、または遮断されました。")
         return
@@ -330,30 +357,38 @@ def render_bus_schedule():
         st.warning("🌙 本日の運行は終了しております。")
         return
 
-    # 最大3便分のカードを表示
-    valid_buses = [b for b in results if b['info'] in (0, -3) and b['line'] != '--']
+    valid_buses = [
+        b for b in results if b["info"] in (0, -3) and b["line"] != "--"
+    ]
     if not valid_buses:
         st.info("現在表示できる接近中のバスはありません。")
     else:
         for idx, bus in enumerate(valid_buses):
             with st.container(border=True):
-                dep_time = bus['target_times'][0] if bus['target_times'] else "--:--"
-                arr_time = bus['destination_times'][0] if bus['destination_times'] else "--:--"
-                delay_str = bus['status'].get('minute', '') or '定刻・運行前'
-                place_str = bus['status'].get('place', '不明')
+                dep_time = (
+                    bus["target_times"][0] if bus["target_times"] else "--:--"
+                )
+                arr_time = (
+                    bus["destination_times"][0]
+                    if bus["destination_times"]
+                    else "--:--"
+                )
+                delay_str = bus["status"].get("minute", "") or "定刻・運行前"
+                place_str = bus["status"].get("place", "不明")
 
-                st.subheader(f"第{idx+1}便 | 系統: {bus['line']} （{bus['dest_stop']} 行）")
+                st.subheader(
+                    f"第{idx+1}便 | 系統: {bus['line']} （{bus['dest_stop']} 行）"
+                )
 
                 c1, c2 = st.columns(2)
                 c1.metric(
                     label=f"🚏 {st.session_state.start_stop} 発",
                     value=dep_time,
                     delta=delay_str,
-                    delta_color="inverse" if "遅れ" in delay_str else "normal"
+                    delta_color="inverse" if "遅れ" in delay_str else "normal",
                 )
                 c2.metric(
-                    label=f"🏁 {st.session_state.end_stop} 着",
-                    value=arr_time
+                    label=f"🏁 {st.session_state.end_stop} 着", value=arr_time
                 )
 
                 if place_str == "運行前":
@@ -361,11 +396,10 @@ def render_bus_schedule():
                 else:
                     st.success(f"📍 **走行位置:** {place_str}")
 
-                if bus['stops']:
+                if bus["stops"]:
                     with st.expander("停車するバス停一覧を見る"):
-                        st.write(" → ".join(bus['stops']))
+                        st.write(" → ".join(bus["stops"]))
 
-    # 手動更新ボタンと生データ(JSON)確認用
     col_btn, col_json = st.columns(2)
     with col_btn:
         if st.button("🔄 今すぐ手動更新", use_container_width=True):
@@ -373,6 +407,59 @@ def render_bus_schedule():
     with col_json:
         with st.popover("📄 JSONデータを見る", use_container_width=True):
             st.json(results)
+
+
+# 20秒ごとに自動更新される領域
+@st.fragment(run_every="20s")
+def render_bus_schedule():
+    # 右上の端に表示する小さな更新中バッジ用の枠
+    badge_placeholder = st.empty()
+    # メインのバス情報表示枠
+    main_placeholder = st.empty()
+
+    # 1. すでに前回のデータがある場合は、通信中もそれを画面に残したままにする！
+    if st.session_state.last_results is not None:
+        with main_placeholder.container():
+            draw_bus_cards(
+                st.session_state.last_results, st.session_state.last_updated_str
+            )
+
+    # 2. 画面の右上にだけ小さく「🔄 更新中...」と出す（画面は邪魔しない）
+    badge_placeholder.markdown(
+        '<div class="corner-status">🔄 データ更新中...</div>',
+        unsafe_allow_html=True,
+    )
+
+    # 3. 裏でスクレイピングを実行
+    worker = get_worker()
+    t0 = time.perf_counter()
+    try:
+        results = worker.fetch(
+            st.session_state.start_stop, st.session_state.end_stop
+        )
+        elapsed = time.perf_counter() - t0
+        now_str = datetime.now(JST).strftime("%H:%M:%S")
+
+        # 取得成功したらデータを保存
+        st.session_state.last_results = results
+        st.session_state.last_updated_str = (
+            f"最終更新: {now_str} （所要時間: {elapsed:.1f}秒）"
+        )
+    except Exception as e:
+        badge_placeholder.markdown(
+            '<div class="corner-status" style="background-color: #d9534f;">⚠️ 更新失敗（次回再試行）</div>',
+            unsafe_allow_html=True,
+        )
+        if st.session_state.last_results is None:
+            st.error(f"初回取得エラー: {e}")
+        return
+
+    # 4. 取得が終わったら右上のバッジを消し、最新のデータにパッと描き換える
+    badge_placeholder.empty()
+    with main_placeholder.container():
+        draw_bus_cards(
+            st.session_state.last_results, st.session_state.last_updated_str
+        )
 
 
 render_bus_schedule()
