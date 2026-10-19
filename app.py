@@ -935,7 +935,8 @@ def render_signage():
                 """
             )
 
-    st.markdown("".join(html_parts), unsafe_allow_html=True)
+    clean_html = "\n".join(line.strip() for line in "".join(html_parts).splitlines() if line.strip())
+    st.markdown(clean_html, unsafe_allow_html=True)
 
     # フッター（最終更新時刻と手動更新・JSON確認）
     f_col1, f_col2, f_col3 = st.columns([6, 2, 2])
