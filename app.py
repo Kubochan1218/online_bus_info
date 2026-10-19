@@ -518,7 +518,6 @@ def render_signage():
         templates["HEADER"].format(
             start_stop=st.session_state.start_stop,
             end_stop=st.session_state.end_stop,
-            current_time=now_jst.strftime("%H:%M"),
         )
     ]
 
@@ -598,7 +597,7 @@ def render_signage():
                 arrival_html = '<div class="arrival-countdown">&nbsp;</div>'
 
             stops_str = "、".join([s for s in item.get("stops", []) if s])
-            stops_class = "stops-marquee" if len(stops_str) > 14 else "stops-static"
+            stops_str = " ➔ ".join([s for s in item.get("stops", []) if s])
 
             html_parts.append(
                 templates["TOP_ITEM"].format(
@@ -611,8 +610,7 @@ def render_signage():
                     remark_html=remark_html,
                     status=item.get("status", ""),
                     arrival_html=arrival_html,
-                    stops_class=stops_class,
-                    stops_str=stops_str if stops_str else "―",
+                    stops_str=stops_str if stops_str else "（直行・途中停留所なし）",
                     pro_color_class=pro_color_class,
                     pro_dep_time=item.get("pro_dep_time", ""),
                     pro_arr_time=item.get("pro_arr_time", ""),

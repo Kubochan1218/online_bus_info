@@ -7,9 +7,11 @@ header[data-testid="stHeader"] {
     background-color: transparent !important;
 }
 .block-container {
-    padding-top: 1rem !important;
+    padding-top: 0.6rem !important;
     padding-bottom: 1rem !important;
-    max-width: 1400px !important;
+    padding-left: 0.6rem !important;
+    padding-right: 0.6rem !important;
+    max-width: 900px !important;
 }
 /* 更新中に画面が半透明になるのを完全に防ぐ */
 [data-stale="true"], .stFragment [data-stale="true"] {
@@ -21,61 +23,65 @@ header[data-testid="stHeader"] {
 /* 右下の小さな通信ステータスバッジ */
 .corner-status {
     position: fixed;
-    bottom: 12px;
-    right: 16px;
+    bottom: 10px;
+    right: 12px;
     z-index: 999999;
-    background-color: rgba(30, 30, 30, 0.9);
+    background-color: rgba(30, 30, 30, 0.92);
     color: #AAAAAA;
     border: 1px solid #333333;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 0.8rem;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
     pointer-events: none;
 }
 
-/* ヘッダーバー */
+/* ヘッダーバー（現在時刻を廃止してスリム化） */
 .signage-header {
     background-color: #181818;
-    padding: 12px 24px;
+    padding: 10px 14px;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
     border-bottom: 2px solid #333333;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
+    border-radius: 6px 6px 0 0;
 }
 .route-title {
-    font-size: clamp(1.4rem, 3.5vw, 2.8rem);
+    font-size: clamp(1.1rem, 4.2vw, 2.0rem);
     font-weight: bold;
     color: #FFFFFF;
+    text-align: center;
+    line-height: 1.3;
 }
 
-/* カラム見出し（時刻・行先・遅れ） */
+/* カラム見出し（スマホでも崩れない比率に調整） */
 .col-headers {
     display: grid;
-    grid-template-columns: 18% 12% 38% 20% 12%;
+    grid-template-columns: 20% 14% 34% 20% 12%;
     color: #AAAAAA;
-    font-size: clamp(0.9rem, 1.8vw, 1.4rem);
+    font-size: clamp(0.75rem, 2.8vw, 1.1rem);
     font-weight: bold;
-    padding: 4px 16px;
+    padding: 4px 8px;
     text-align: center;
 }
 .col-headers .hdr-dest {
     text-align: left;
-    padding-left: 12px;
+    padding-left: 6px;
 }
 
 /* 第1便・第2便共通のメインカード行 */
 .bus-row-card {
     background-color: #252526;
     display: grid;
-    grid-template-columns: 18% 12% 38% 20% 12%;
+    grid-template-columns: 20% 14% 34% 20% 12%;
     align-items: center;
-    padding: 10px 16px;
-    margin-bottom: 4px;
-    min-height: 84px;
+    padding: 8px 8px;
+    margin-bottom: 3px;
+    min-height: 64px;
+    border-radius: 4px;
 }
 .dep-time {
-    font-size: clamp(1.6rem, 3.8vw, 3.2rem);
+    font-size: clamp(1.25rem, 4.8vw, 2.4rem);
     font-weight: bold;
     text-align: center;
     font-family: 'Frutiger', 'Segoe UI', sans-serif;
@@ -84,30 +90,33 @@ header[data-testid="stHeader"] {
     display: inline-flex;
     justify-content: center;
     align-items: center;
-    width: clamp(48px, 7vw, 80px);
-    height: clamp(48px, 7vw, 80px);
-    font-size: clamp(1.3rem, 3vw, 2.6rem);
+    width: clamp(38px, 9vw, 64px);
+    height: clamp(38px, 9vw, 64px);
+    font-size: clamp(1.0rem, 3.8vw, 1.8rem);
     font-weight: bold;
     color: #FFFFFF;
     margin: 0 auto;
+    border-radius: 4px;
 }
 .dest-name {
-    font-size: clamp(1.3rem, 3.2vw, 2.6rem);
+    font-size: clamp(1.0rem, 3.8vw, 2.0rem);
     font-weight: bold;
-    padding-left: 12px;
+    padding-left: 6px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .delay-text {
-    font-size: clamp(1.1rem, 2.6vw, 2.2rem);
+    font-size: clamp(0.85rem, 3.2vw, 1.6rem);
     font-weight: bold;
     text-align: center;
+    line-height: 1.2;
 }
 .remark-text {
-    font-size: clamp(1.1rem, 2.5vw, 2.1rem);
+    font-size: clamp(0.8rem, 3.0vw, 1.5rem);
     font-weight: bold;
     text-align: center;
+    line-height: 1.1;
 }
 
 /* 第1便の詳細エリア（走行位置） */
@@ -115,48 +124,52 @@ header[data-testid="stHeader"] {
     background-color: #1E1E1E;
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    padding: 8px 12px;
     margin-bottom: 2px;
-    gap: 16px;
+    gap: 10px;
+    border-radius: 4px;
 }
 .detail-tag {
     color: #AAAAAA;
-    font-size: clamp(0.85rem, 1.6vw, 1.2rem);
+    font-size: clamp(0.75rem, 2.8vw, 1.05rem);
     white-space: nowrap;
-    min-width: 90px;
+    background-color: #2D2D2D;
+    padding: 2px 8px;
+    border-radius: 4px;
 }
 .detail-location-val {
     color: #FFFFFF;
-    font-size: clamp(1.1rem, 2.4vw, 1.9rem);
+    font-size: clamp(0.95rem, 3.6vw, 1.5rem);
     font-weight: bold;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* 第1便の下段（到着まで＋停車バス停 ＆ 見込み時刻ルート図） */
+/* 第1便の下段（到着まで＋停車Expander ＆ 見込み時刻ルート図） */
 .detail-bottom-grid {
     background-color: #1E1E1E;
     display: grid;
-    grid-template-columns: 58% 42%;
-    padding: 12px 16px;
+    grid-template-columns: 55% 45%;
+    padding: 10px 12px;
     align-items: center;
-    margin-bottom: 16px;
+    gap: 12px;
+    margin-bottom: 12px;
+    border-radius: 4px;
 }
-@media (max-width: 768px) {
-    .detail-bottom-grid {
-        grid-template-columns: 1fr;
-        gap: 12px;
-    }
+.arrival-and-stops {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 .arrival-countdown {
-    font-size: clamp(1.2rem, 2.5vw, 2.0rem);
+    font-size: clamp(1.05rem, 4.0vw, 1.6rem);
     font-weight: bold;
-    margin-bottom: 10px;
     display: inline-block;
-    padding: 2px 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    width: fit-content;
 }
-/* まもなく到着の点滅アニメーション */
 @keyframes blink-warn {
     0%, 49% { background-color: #FF9800; color: #000000; }
     50%, 100% { background-color: transparent; color: #FF9800; }
@@ -165,54 +178,48 @@ header[data-testid="stHeader"] {
     animation: blink-warn 2s infinite;
 }
 
-/* 停車バス停の横スクロール */
-.stops-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    overflow: hidden;
+/* 停車バス停のExpander（折りたたみ）スタイル */
+.stops-expander {
+    background-color: #252526;
+    border: 1px solid #383838;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: clamp(0.85rem, 3.2vw, 1.1rem);
 }
-.stops-scroll-wrapper {
-    overflow-x: auto;
-    white-space: nowrap;
-    scrollbar-width: none;
-    flex: 1;
+.stops-expander summary {
+    color: #CCCCCC;
+    font-weight: bold;
+    cursor: pointer;
+    outline: none;
+    user-select: none;
 }
-.stops-scroll-wrapper::-webkit-scrollbar {
-    display: none;
+.stops-expander[open] summary {
+    color: #2196F3;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #383838;
+    padding-bottom: 4px;
 }
-@keyframes marquee {
-    0%   { transform: translateX(0%); }
-    15%  { transform: translateX(0%); }
-    85%  { transform: translateX(-65%); }
-    100% { transform: translateX(0%); }
-}
-.stops-marquee {
-    display: inline-block;
-    font-size: clamp(1.0rem, 2.1vw, 1.6rem);
+.stops-content {
     color: #FFFFFF;
-    animation: marquee 18s linear infinite;
-}
-.stops-static {
-    display: inline-block;
-    font-size: clamp(1.0rem, 2.1vw, 1.6rem);
-    color: #FFFFFF;
+    font-size: clamp(0.85rem, 3.2vw, 1.1rem);
+    line-height: 1.5;
+    word-break: break-word;
 }
 
-/* 右側の出発・到着見込み時刻エリア（縦棒デザイン再現） */
+/* 出発・到着見込み時刻エリア（縦棒デザイン） */
 .est-time-box {
-    border-left: 4px solid #FFFFFF;
-    padding-left: 16px;
+    border-left: 3px solid #444444;
+    padding-left: 12px;
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
 }
 .est-times-col {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: 96px;
-    font-size: clamp(1.3rem, 2.8vw, 2.2rem);
+    height: 72px;
+    font-size: clamp(1.15rem, 4.2vw, 1.8rem);
     font-weight: bold;
     font-family: 'Frutiger', 'Segoe UI', sans-serif;
 }
@@ -220,40 +227,55 @@ header[data-testid="stHeader"] {
     display: flex;
     flex-direction: column;
     align-items: center;
-    height: 90px;
+    height: 64px;
     justify-content: space-between;
 }
 .route-dot {
-    width: 18px;
-    height: 18px;
+    width: 12px;
+    height: 12px;
     background-color: #FFFFFF;
     border-radius: 50%;
 }
 .route-bar {
-    width: 5px;
+    width: 3px;
     flex: 1;
     background-color: #FFFFFF;
-    margin: -2px 0;
+    margin: -1px 0;
 }
 .est-stops-col {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: 94px;
-    font-size: clamp(1.0rem, 2.1vw, 1.6rem);
+    height: 70px;
+    font-size: clamp(0.9rem, 3.4vw, 1.35rem);
     font-weight: bold;
     color: #FFFFFF;
     overflow: hidden;
     white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* スマホ縦画面（幅600px以下）用の最適化 */
+@media (max-width: 600px) {
+    .detail-bottom-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    .est-time-box {
+        border-left: none;
+        border-top: 1px solid #333333;
+        padding-left: 4px;
+        padding-top: 10px;
+    }
 }
 
 .section-divider {
     height: 2px;
     background-color: #333333;
-    margin: 14px 0;
+    margin: 10px 0;
 }
 
-/* --- エディタエラー回避用のカラー・背景クラス --- */
+/* カラー・背景クラス */
 .bg-blue   { background-color: #2196F3; }
 .bg-orange { background-color: #FF9800; }
 
@@ -265,6 +287,6 @@ header[data-testid="stHeader"] {
 
 .msg-row-text {
     grid-column: 1 / -1;
-    font-size: 1.8rem;
+    font-size: clamp(1.0rem, 4vw, 1.5rem);
     text-align: center;
 }

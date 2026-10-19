@@ -1,64 +1,214 @@
-<!-- === HEADER === -->
-<div class="signage-header">
-    <div class="route-title">{start_stop} &nbsp;➔&nbsp; {end_stop}</div>
-</div>
-<div class="col-headers">
-    <div>時 刻</div>
-    <div>系 統</div>
-    <div class="hdr-dest">行 先</div>
-    <div>遅 れ</div>
-    <div>備 考</div>
-</div>
+# --- 6. 電光掲示板UIの自動更新描画（20秒ごと） ---
+@st.fragment(run_every="20s")
+def render_signage():
+    templates = load_html_templates("template.html")
+    if not templates:
+        st.error("template.html が見つかりません。リポジトリに作成してください。")
+        return
 
-<!-- === TOP_ITEM === -->
-<div class="bus-row-card">
-    <div class="dep-time">{dep_time}</div>
-    <div><div class="line-box {line_bg_class}">{line_str}</div></div>
-    <div class="dest-name">{destination}</div>
-    <div class="delay-text {rem_color_class}">{minute_str}</div>
-    <div class="remark-text">{remark_html}</div>
-</div>
-<div class="detail-location-bar">
-    <div class="detail-tag">走行位置</div>
-    <div class="detail-location-val">{status}</div>
-</div>
-<div class="detail-bottom-grid">
-    <div>
-        {arrival_html}
-        <div class="stops-row">
-            <span class="detail-tag">停車バス停</span>
-            <div class="stops-scroll-wrapper">
-                <span class="{stops_class}">{stops_str}</span>
-            </div>
-        </div>
-    </div>
-    <div class="est-time-box">
-        <div class="est-times-col">
-            <div class="{pro_color_class}">{pro_dep_time}</div>
-            <div class="{pro_color_class}">{pro_arr_time}</div>
-        </div>
-        <div class="route-line-graphic">
-            <div class="route-dot"></div>
-            <div class="route-bar"></div>
-            <div class="route-dot"></div>
-        </div>
-        <div class="est-stops-col">
-            <div>{start_stop}</div>
-            <div>{end_stop}</div>
-        </div>
-    </div>
-</div>
+    badge = st.empty()
+    badge.markdown(
+        '<div class="corner-status">🔄 更新中...</div>', unsafe_allow_html=True
+    )
 
-<!-- === BOTTOM_ITEM === -->
-<div class="bus-row-card">
-    <div class="dep-time">{dep_time}</div>
-    <div><div class="line-box {line_bg_class}">{line_str}</div></div>
-    <div class="dest-name">{destination}</div>
-    <div class="delay-text {rem_color_class}">{minute_str}</div>
-    <div class="remark-text">{remark_html}</div>
-</div>
+    now_jst = datetime.datetime.now(JST)
+    t0 = time.perf_counter()
 
-<!-- === MESSAGE_ROW === -->
-<div class="bus-row-card">
-    <div class="msg-row-text {msg_color_class}">{message}</div>
-</div>
+    if st.session_state.use_dummy:
+        raw_results = DUMMY_DATA
+        elapsed = 0.0
+        badge.empty()
+    else:
+        worker = get_worker()
+        try:
+            raw_results = worker.fetch(
+                st.session_state.start_stop, st.session_state.end_stop
+            )
+            elapsed = time.perf_counter() - t0
+            badge.empty()
+        except Exception as e:
+            badge.markdown(
+                '<div class="corner-status text-red">⚠️ 取得エラー</div>',
+                unsafe_allow_html=True,
+            )
+            st.error(f"スクレイピングエラー: {e}")
+            return
+
+    top_items, bottom_items = parse_results_like_pc(raw_results)
+
+    # 1. ヘッダー部分のHTML組み立て
+    html_parts = [
+        templates["HEADER"].format(
+            start_stop=st.session_state.start_stop,
+            end_stop=st.session_state.end_stop,
+            current_time=now_jst.strftime("%H:%M"),
+        )
+    ]
+
+    # 2. 上段（第1便）のHTML組み立て
+    if top_items:
+        item = top_items[0]
+        info_code = item.get("info", 0)
+
+        if info_code == 403:
+            html_parts.append(
+                templates["MESSAGE_ROW"].format(
+                    msg_color_class="text-red",
+                    message="サイトへのアクセスがタイムアウトしました",
+                )
+            )
+        elif info_code == -2:
+            html_parts.append(
+                templates["MESSAGE_ROW"].format(
+                    msg_color_class="text-white",
+                    message="本日の運行は終了しました",
+                )
+            )
+        elif info_code != -9 and item.get("line") != "--":
+            minute_str = item.get("delay", "")
+            rem_color_class = "text-white"
+            pro_color_class = "text-white"
+            if minute_str == "正常運行":
+                rem_color_class = "text-green"
+            elif minute_str == "少し遅れ":
+                rem_color_class, pro_color_class = "text-orange", "text-orange"
+            elif re.match(r"約(\d+)分遅れ", minute_str):
+                rem_color_class, pro_color_class = "text-red", "text-orange"
+
+            line_str = item.get("line", "")
+            line_bg_class = "bg-orange" if line_str in ["直行", "急行"] else "bg-blue"
+
+            remarks = []
+            if line_str in ["直行", "急行"]:
+                remarks.append(f'<span class="text-orange">{line_str}</span>')
+            if info_code == -3:
+                remarks.append('<span class="text-red">最終</span>')
+            if item.get("starting_stop"):
+                remarks.append('<span class="text-white">始発</span>')
+            remark_html = " / ".join(remarks)
+
+            arrival_min = 999
+            pro_dep = item.get("pro_dep_time", "")
+            if pro_dep:
+                try:
+                    t_dep = datetime.datetime.strptime(pro_dep, "%H:%M")
+                    now_naive = now_jst.replace(
+                        tzinfo=None, second=0, microsecond=0
+                    )
+                    if t_dep.hour < 3 and now_naive.hour > 20:
+                        t_dep = t_dep.replace(
+                            year=now_naive.year,
+                            month=now_naive.month,
+                            day=now_naive.day + 1,
+                        )
+                    else:
+                        t_dep = t_dep.replace(
+                            year=now_naive.year,
+                            month=now_naive.month,
+                            day=now_naive.day,
+                        )
+                    arrival_min = int((t_dep - now_naive).total_seconds() // 60) - 1
+                except Exception:
+                    pass
+
+            if st.session_state.use_dummy:
+                arrival_html = '<div class="arrival-countdown blink-soon">まもなく到着</div>'
+            elif 2 < arrival_min < 31:
+                arrival_html = f'<div class="arrival-countdown">到着まで約 {arrival_min} 分</div>'
+            elif arrival_min <= 2:
+                arrival_html = '<div class="arrival-countdown blink-soon">まもなく到着</div>'
+            else:
+                arrival_html = '<div class="arrival-countdown">&nbsp;</div>'
+
+            stops_str = "、".join([s for s in item.get("stops", []) if s])
+            stops_class = "stops-marquee" if len(stops_str) > 14 else "stops-static"
+
+            html_parts.append(
+                templates["TOP_ITEM"].format(
+                    dep_time=item.get("dep_time", ""),
+                    line_bg_class=line_bg_class,
+                    line_str=line_str,
+                    destination=item.get("destination", ""),
+                    rem_color_class=rem_color_class,
+                    minute_str=minute_str,
+                    remark_html=remark_html,
+                    status=item.get("status", ""),
+                    arrival_html=arrival_html,
+                    stops_class=stops_class,
+                    stops_str=stops_str if stops_str else "―",
+                    pro_color_class=pro_color_class,
+                    pro_dep_time=item.get("pro_dep_time", ""),
+                    pro_arr_time=item.get("pro_arr_time", ""),
+                    start_stop=st.session_state.start_stop,
+                    end_stop=st.session_state.end_stop,
+                )
+            )
+        else:
+            html_parts.append(
+                templates["MESSAGE_ROW"].format(
+                    msg_color_class="text-gray",
+                    message="現在接近中のバスはありません",
+                )
+            )
+
+    # 3. 下段（第2便・第3便）のHTML組み立て
+    if bottom_items:
+        html_parts.append('<div class="section-divider"></div>')
+        for b_item in bottom_items:
+            b_min = b_item.get("delay", "")
+            b_color_class = "text-white"
+            if b_min == "正常運行":
+                b_color_class = "text-green"
+            elif b_min == "少し遅れ":
+                b_color_class = "text-orange"
+            elif re.match(r"約(\d+)分遅れ", b_min):
+                b_color_class = "text-red"
+
+            b_line = b_item.get("line", "")
+            b_bg_class = "bg-orange" if b_line in ["直行", "急行"] else "bg-blue"
+
+            b_remarks = []
+            if b_line in ["直行", "急行"]:
+                b_remarks.append(f'<span class="text-orange">{b_line}</span>')
+            if b_item.get("info") == -3:
+                b_remarks.append('<span class="text-red">最終</span>')
+            if b_item.get("starting_stop"):
+                b_remarks.append('<span class="text-white">始発</span>')
+            b_rem_html = " / ".join(b_remarks)
+
+            html_parts.append(
+                templates["BOTTOM_ITEM"].format(
+                    dep_time=b_item.get("dep_time", ""),
+                    line_bg_class=b_bg_class,
+                    line_str=b_line,
+                    destination=b_item.get("destination", ""),
+                    rem_color_class=b_color_class,
+                    minute_str=b_min,
+                    remark_html=b_rem_html,
+                )
+            )
+
+    # インデントを除去してHTMLとして描画
+    clean_html = "\n".join(
+        line.strip() for line in "".join(html_parts).splitlines() if line.strip()
+    )
+    st.markdown(clean_html, unsafe_allow_html=True)
+
+    # フッター
+    f_col1, f_col2, f_col3 = st.columns([6, 2, 2])
+    with f_col1:
+        mode_str = (
+            "🧪 ダミーデータ表示中"
+            if st.session_state.use_dummy
+            else f"最終取得: {now_jst.strftime('%H:%M:%S')} (所要 {elapsed:.1f}秒)"
+        )
+        st.caption(f"⏱ {mode_str} ／ 20秒ごとに自動更新")
+    with f_col2:
+        if st.button("🔄 手動更新", use_container_width=True, key="signage_refresh"):
+            st.rerun()
+    with f_col3:
+        with st.popover("📄 JSON確認", use_container_width=True):
+            st.json(raw_results)
+
+
+render_signage()
