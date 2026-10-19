@@ -48,21 +48,6 @@ header[data-testid="stHeader"] {
     font-weight: bold;
     color: #FFFFFF;
 }
-.clock-box {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-}
-.clock-label {
-    font-size: clamp(0.9rem, 1.8vw, 1.4rem);
-    color: #AAAAAA;
-}
-.clock-time {
-    font-size: clamp(1.8rem, 4vw, 3.4rem);
-    font-weight: bold;
-    color: #FFFFFF;
-    font-family: 'Frutiger', 'Segoe UI', Roboto, sans-serif;
-}
 
 /* カラム見出し（時刻・行先・遅れ） */
 .col-headers {
