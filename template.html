@@ -1,0 +1,68 @@
+<!-- === HEADER === -->
+<div class="signage-header">
+    <div class="route-title">{start_stop} &nbsp;➔&nbsp; {end_stop}</div>
+    <div class="clock-box">
+        <span class="clock-label">現在時刻</span>
+        <span class="clock-time">{current_time}</span>
+    </div>
+</div>
+<div class="col-headers">
+    <div>時 刻</div>
+    <div>系 統</div>
+    <div class="hdr-dest">行 先</div>
+    <div>遅 れ</div>
+    <div>備 考</div>
+</div>
+
+<!-- === TOP_ITEM === -->
+<div class="bus-row-card">
+    <div class="dep-time">{dep_time}</div>
+    <div><div class="line-box {line_bg_class}">{line_str}</div></div>
+    <div class="dest-name">{destination}</div>
+    <div class="delay-text {rem_color_class}">{minute_str}</div>
+    <div class="remark-text">{remark_html}</div>
+</div>
+<div class="detail-location-bar">
+    <div class="detail-tag">走行位置</div>
+    <div class="detail-location-val">{status}</div>
+</div>
+<div class="detail-bottom-grid">
+    <div>
+        {arrival_html}
+        <div class="stops-row">
+            <span class="detail-tag">停車バス停</span>
+            <div class="stops-scroll-wrapper">
+                <span class="{stops_class}">{stops_str}</span>
+            </div>
+        </div>
+    </div>
+    <div class="est-time-box">
+        <div class="est-times-col">
+            <div class="{pro_color_class}">{pro_dep_time}</div>
+            <div class="{pro_color_class}">{pro_arr_time}</div>
+        </div>
+        <div class="route-line-graphic">
+            <div class="route-dot"></div>
+            <div class="route-bar"></div>
+            <div class="route-dot"></div>
+        </div>
+        <div class="est-stops-col">
+            <div>{start_stop}</div>
+            <div>{end_stop}</div>
+        </div>
+    </div>
+</div>
+
+<!-- === BOTTOM_ITEM === -->
+<div class="bus-row-card">
+    <div class="dep-time">{dep_time}</div>
+    <div><div class="line-box {line_bg_class}">{line_str}</div></div>
+    <div class="dest-name">{destination}</div>
+    <div class="delay-text {rem_color_class}">{minute_str}</div>
+    <div class="remark-text">{remark_html}</div>
+</div>
+
+<!-- === MESSAGE_ROW === -->
+<div class="bus-row-card">
+    <div class="msg-row-text {msg_color_class}">{message}</div>
+</div>

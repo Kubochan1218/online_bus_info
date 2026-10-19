@@ -1,6 +1,6 @@
 import asyncio
 import datetime
-import json
+from pathlib import Path
 import re
 import subprocess
 import threading
@@ -12,8 +12,9 @@ from playwright.async_api import Playwright, async_playwright, expect
 st.set_page_config(page_title="バス発車案内", page_icon="🚌", layout="wide")
 
 JST = pytz.timezone("Asia/Tokyo")
+BASE_DIR = Path(__file__).parent
 
-# PC版のダミーデータをそのまま移植（夜間やテスト時にすぐ確認可能）
+# PC版のダミーデータ
 DUMMY_DATA = [
     {
         "info": 0,
@@ -47,283 +48,32 @@ DUMMY_DATA = [
     },
 ]
 
-# --- PC版のカラーパレットとレイアウトを完全再現するCSS ---
-st.markdown(
-    """
-    <style>
-    /* 全体背景をダークモード（#121212）に固定 */
-    .stApp {
-        background-color: #121212 !important;
-        color: #FFFFFF !important;
-    }
-    header[data-testid="stHeader"] {
-        background-color: transparent !important;
-    }
-    .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
-        max-width: 1400px !important;
-    }
-    /* 更新中に画面が半透明になるのを完全に防ぐ */
-    [data-stale="true"], .stFragment [data-stale="true"] {
-        opacity: 1 !important;
-        transition: none !important;
-        filter: none !important;
-    }
 
-    /* 右上の小さな通信ステータスバッジ */
-    .corner-status {
-        position: fixed;
-        bottom: 12px;
-        right: 16px;
-        z-index: 999999;
-        background-color: rgba(30, 30, 30, 0.9);
-        color: #AAAAAA;
-        border: 1px solid #333333;
-        padding: 4px 12px;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        pointer-events: none;
-    }
+# --- 外部ファイル（style.css と template.html）を読み込む関数 ---
+def load_css(file_name="style.css"):
+    css_path = BASE_DIR / file_name
+    if css_path.exists():
+        css_content = css_path.read_text(encoding="utf-8")
+        st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
 
-    /* ヘッダーバー */
-    .signage-header {
-        background-color: #181818;
-        padding: 12px 24px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 2px solid #333333;
-        margin-bottom: 12px;
-    }
-    .route-title {
-        font-size: clamp(1.4rem, 3.5vw, 2.8rem);
-        font-weight: bold;
-        color: #FFFFFF;
-    }
-    .clock-box {
-        display: flex;
-        align-items: baseline;
-        gap: 12px;
-    }
-    .clock-label {
-        font-size: clamp(0.9rem, 1.8vw, 1.4rem);
-        color: #AAAAAA;
-    }
-    .clock-time {
-        font-size: clamp(1.8rem, 4vw, 3.4rem);
-        font-weight: bold;
-        color: #FFFFFF;
-        font-family: 'Frutiger', 'Segoe UI', Roboto, sans-serif;
-    }
 
-    /* カラム見出し（時刻・行先・遅れ） */
-    .col-headers {
-        display: grid;
-        grid-template-columns: 18% 12% 38% 20% 12%;
-        color: #AAAAAA;
-        font-size: clamp(0.9rem, 1.8vw, 1.4rem);
-        font-weight: bold;
-        padding: 4px 16px;
-        text-align: center;
-    }
-    .col-headers .hdr-dest {
-        text-align: left;
-        padding-left: 12px;
-    }
+def load_html_templates(file_name="template.html"):
+    html_path = BASE_DIR / file_name
+    templates = {}
+    if not html_path.exists():
+        return templates
+    raw = html_path.read_text(encoding="utf-8")
+    # <!-- === NAME === --> ごとに分割して辞書化
+    parts = re.split(r"<!--\s*===\s*(\w+)\s*===\s*-->", raw)
+    for i in range(1, len(parts), 2):
+        section_name = parts[i].strip()
+        section_body = parts[i + 1].strip()
+        templates[section_name] = section_body
+    return templates
 
-    /* 第1便・第2便共通のメインカード行 */
-    .bus-row-card {
-        background-color: #252526;
-        display: grid;
-        grid-template-columns: 18% 12% 38% 20% 12%;
-        align-items: center;
-        padding: 10px 16px;
-        margin-bottom: 4px;
-        min-height: 84px;
-    }
-    .dep-time {
-        font-size: clamp(1.6rem, 3.8vw, 3.2rem);
-        font-weight: bold;
-        text-align: center;
-        font-family: 'Frutiger', 'Segoe UI', sans-serif;
-    }
-    .line-box {
-        display: inline-flex;
-        justify-content: center;
-        align-items: center;
-        width: clamp(48px, 7vw, 80px);
-        height: clamp(48px, 7vw, 80px);
-        font-size: clamp(1.3rem, 3vw, 2.6rem);
-        font-weight: bold;
-        color: #FFFFFF;
-        margin: 0 auto;
-    }
-    .dest-name {
-        font-size: clamp(1.3rem, 3.2vw, 2.6rem);
-        font-weight: bold;
-        padding-left: 12px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .delay-text {
-        font-size: clamp(1.1rem, 2.6vw, 2.2rem);
-        font-weight: bold;
-        text-align: center;
-    }
-    .remark-text {
-        font-size: clamp(1.1rem, 2.5vw, 2.1rem);
-        font-weight: bold;
-        text-align: center;
-    }
 
-    /* 第1便の詳細エリア（走行位置） */
-    .detail-location-bar {
-        background-color: #1E1E1E;
-        display: flex;
-        align-items: center;
-        padding: 10px 16px;
-        margin-bottom: 2px;
-        gap: 16px;
-    }
-    .detail-tag {
-        color: #AAAAAA;
-        font-size: clamp(0.85rem, 1.6vw, 1.2rem);
-        white-space: nowrap;
-        min-width: 90px;
-    }
-    .detail-location-val {
-        color: #FFFFFF;
-        font-size: clamp(1.1rem, 2.4vw, 1.9rem);
-        font-weight: bold;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    /* 第1便の下段（到着まで＋停車バス停 ＆ 見込み時刻ルート図） */
-    .detail-bottom-grid {
-        background-color: #1E1E1E;
-        display: grid;
-        grid-template-columns: 58% 42%;
-        padding: 12px 16px;
-        align-items: center;
-        margin-bottom: 16px;
-    }
-    @media (max-width: 768px) {
-        .detail-bottom-grid {
-            grid-template-columns: 1fr;
-            gap: 12px;
-        }
-    }
-    .arrival-countdown {
-        font-size: clamp(1.2rem, 2.5vw, 2.0rem);
-        font-weight: bold;
-        margin-bottom: 10px;
-        display: inline-block;
-        padding: 2px 10px;
-    }
-    /* まもなく到着の点滅アニメーション */
-    @keyframes blink-warn {
-        0%, 49% { background-color: #FF9800; color: #000000; }
-        50%, 100% { background-color: transparent; color: #FF9800; }
-    }
-    .blink-soon {
-        animation: blink-warn 2s infinite;
-    }
-
-    /* 停車バス停の横スクロール */
-    .stops-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        overflow: hidden;
-    }
-    .stops-scroll-wrapper {
-        overflow-x: auto;
-        white-space: nowrap;
-        scrollbar-width: none;
-        flex: 1;
-    }
-    .stops-scroll-wrapper::-webkit-scrollbar {
-        display: none;
-    }
-    @keyframes marquee {
-        0%   { transform: translateX(0%); }
-        15%  { transform: translateX(0%); }
-        85%  { transform: translateX(-65%); }
-        100% { transform: translateX(0%); }
-    }
-    .stops-marquee {
-        display: inline-block;
-        font-size: clamp(1.0rem, 2.1vw, 1.6rem);
-        color: #FFFFFF;
-        animation: marquee 18s linear infinite;
-    }
-    .stops-static {
-        display: inline-block;
-        font-size: clamp(1.0rem, 2.1vw, 1.6rem);
-        color: #FFFFFF;
-    }
-
-    /* 右側の出発・到着見込み時刻エリア（縦棒デザイン再現） */
-    .est-time-box {
-        border-left: 4px solid #FFFFFF;
-        padding-left: 16px;
-        display: flex;
-        align-items: center;
-        gap: 14px;
-    }
-    .est-times-col {
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        height: 96px;
-        font-size: clamp(1.3rem, 2.8vw, 2.2rem);
-        font-weight: bold;
-        font-family: 'Frutiger', 'Segoe UI', sans-serif;
-    }
-    .route-line-graphic {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        height: 90px;
-        justify-content: space-between;
-    }
-    .route-dot {
-        width: 18px;
-        height: 18px;
-        background-color: #FFFFFF;
-        border-radius: 50%;
-    }
-    .route-bar {
-        width: 5px;
-        flex: 1;
-        background-color: #FFFFFF;
-        margin: -2px 0;
-    }
-    .est-stops-col {
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        height: 94px;
-        font-size: clamp(1.0rem, 2.1vw, 1.6rem);
-        font-weight: bold;
-        color: #FFFFFF;
-        overflow: hidden;
-        white-space: nowrap;
-    }
-
-    .section-divider {
-        height: 2px;
-        background-color: #333333;
-        margin: 14px 0;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# CSSの適用
+load_css("style.css")
 
 
 # --- 1. 初回起動時にPlaywrightのChromiumをインストール ---
@@ -335,7 +85,7 @@ def install_playwright_browser():
 install_playwright_browser()
 
 
-# --- 2. スクレイピングクラス（元のBusFetcher） ---
+# --- 2. スクレイピングクラス ---
 class BusFetcher:
 
     def __init__(self, playwright: Playwright, input_bus_stop, input_end_stop):
@@ -615,7 +365,7 @@ def get_worker():
     return PlaywrightWorker()
 
 
-# --- 4. PC版の _parse_results ロジックを完全移植 ---
+# --- 4. PC版の _parse_results ロジック ---
 def parse_results_like_pc(results):
     if not results:
         return [], []
@@ -693,7 +443,7 @@ def parse_results_like_pc(results):
     return top_items, bottom_items
 
 
-# --- 5. 設定バー（折りたたみ可能） ---
+# --- 5. 設定バー ---
 if "start_stop" not in st.session_state:
     st.session_state.start_stop = "県立大工学部"
 if "end_stop" not in st.session_state:
@@ -728,6 +478,11 @@ with st.expander("⚙️ 設定・バス停変更・ダミーテスト（タッ�
 # --- 6. 電光掲示板UIの自動更新描画（20秒ごと） ---
 @st.fragment(run_every="20s")
 def render_signage():
+    templates = load_html_templates("template.html")
+    if not templates:
+        st.error("template.html が見つかりません。リポジトリに作成してください。")
+        return
+
     badge = st.empty()
     badge.markdown(
         '<div class="corner-status">🔄 更新中...</div>', unsafe_allow_html=True
@@ -750,7 +505,7 @@ def render_signage():
             badge.empty()
         except Exception as e:
             badge.markdown(
-                '<div class="corner-status" style="color:#F44336;">⚠️ 取得エラー</div>',
+                '<div class="corner-status text-red">⚠️ 取得エラー</div>',
                 unsafe_allow_html=True,
             )
             st.error(f"スクレイピングエラー: {e}")
@@ -758,63 +513,57 @@ def render_signage():
 
     top_items, bottom_items = parse_results_like_pc(raw_results)
 
-    # 1. 上部ヘッダー（バス停区間 ＆ 現在時刻）
+    # 1. ヘッダー部分のHTML組み立て
     html_parts = [
-        f"""
-        <div class="signage-header">
-            <div class="route-title">{st.session_state.start_stop} &nbsp;➔&nbsp; {st.session_state.end_stop}</div>
-            <div class="clock-box">
-                <span class="clock-label">現在時刻</span>
-                <span class="clock-time">{now_jst.strftime('%H:%M')}</span>
-            </div>
-        </div>
-        <div class="col-headers">
-            <div>時 刻</div>
-            <div>系 統</div>
-            <div class="hdr-dest">行 先</div>
-            <div>遅 れ</div>
-            <div>備 考</div>
-        </div>
-        """
+        templates["HEADER"].format(
+            start_stop=st.session_state.start_stop,
+            end_stop=st.session_state.end_stop,
+            current_time=now_jst.strftime("%H:%M"),
+        )
     ]
 
-    # 2. 上段（第1便）の生成
+    # 2. 上段（第1便）のHTML組み立て
     if top_items:
         item = top_items[0]
         info_code = item.get("info", 0)
 
         if info_code == 403:
             html_parts.append(
-                '<div class="bus-row-card"><div style="grid-column: 1 / -1; font-size: 1.8rem; color: #F44336; text-align: center;">サイトへのアクセスがタイムアウトしました</div></div>'
+                templates["MESSAGE_ROW"].format(
+                    msg_color_class="text-red",
+                    message="サイトへのアクセスがタイムアウトしました",
+                )
             )
         elif info_code == -2:
             html_parts.append(
-                '<div class="bus-row-card"><div style="grid-column: 1 / -1; font-size: 2.0rem; color: #FFFFFF; text-align: center;">本日の運行は終了しました</div></div>'
+                templates["MESSAGE_ROW"].format(
+                    msg_color_class="text-white",
+                    message="本日の運行は終了しました",
+                )
             )
         elif info_code != -9 and item.get("line") != "--":
             minute_str = item.get("delay", "")
-            rem_color = "#FFFFFF"
-            pro_color = "#FFFFFF"
+            rem_color_class = "text-white"
+            pro_color_class = "text-white"
             if minute_str == "正常運行":
-                rem_color = "#4CAF50"
+                rem_color_class = "text-green"
             elif minute_str == "少し遅れ":
-                rem_color, pro_color = "#FF9800", "#FF9800"
+                rem_color_class, pro_color_class = "text-orange", "text-orange"
             elif re.match(r"約(\d+)分遅れ", minute_str):
-                rem_color, pro_color = "#F44336", "#FF9800"
+                rem_color_class, pro_color_class = "text-red", "text-orange"
 
             line_str = item.get("line", "")
-            line_bg = "#FF9800" if line_str in ["直行", "急行"] else "#2196F3"
+            line_bg_class = "bg-orange" if line_str in ["直行", "急行"] else "bg-blue"
 
             remarks = []
             if line_str in ["直行", "急行"]:
-                remarks.append(f'<span style="color:#FF9800;">{line_str}</span>')
+                remarks.append(f'<span class="text-orange">{line_str}</span>')
             if info_code == -3:
-                remarks.append('<span style="color:#F44336;">最終</span>')
+                remarks.append('<span class="text-red">最終</span>')
             if item.get("starting_stop"):
-                remarks.append('<span style="color:#FFFFFF;">始発</span>')
+                remarks.append('<span class="text-white">始発</span>')
             remark_html = " / ".join(remarks)
 
-            # 到着までの分数計算
             arrival_min = 999
             pro_dep = item.get("pro_dep_time", "")
             if pro_dep:
@@ -840,7 +589,6 @@ def render_signage():
                     pass
 
             if st.session_state.use_dummy:
-                # ダミーモード時は「まもなく到着」または「約5分」を分かりやすく表示
                 arrival_html = '<div class="arrival-countdown blink-soon">まもなく到着</div>'
             elif 2 < arrival_min < 31:
                 arrival_html = f'<div class="arrival-countdown">到着まで約 {arrival_min} 分</div>'
@@ -853,95 +601,84 @@ def render_signage():
             stops_class = "stops-marquee" if len(stops_str) > 14 else "stops-static"
 
             html_parts.append(
-                f"""
-                <div class="bus-row-card">
-                    <div class="dep-time">{item.get('dep_time', '')}</div>
-                    <div><div class="line-box" style="background-color: {line_bg};">{line_str}</div></div>
-                    <div class="dest-name">{item.get('destination', '')}</div>
-                    <div class="delay-text" style="color: {rem_color};">{minute_str}</div>
-                    <div class="remark-text">{remark_html}</div>
-                </div>
-                <div class="detail-location-bar">
-                    <div class="detail-tag">走行位置</div>
-                    <div class="detail-location-val">{item.get('status', '')}</div>
-                </div>
-                <div class="detail-bottom-grid">
-                    <div>
-                        {arrival_html}
-                        <div class="stops-row">
-                            <span class="detail-tag">停車バス停</span>
-                            <div class="stops-scroll-wrapper">
-                                <span class="{stops_class}">{stops_str if stops_str else '―'}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="est-time-box">
-                        <div class="est-times-col">
-                            <div style="color: {pro_color};">{item.get('pro_dep_time', '')}</div>
-                            <div style="color: {pro_color};">{item.get('pro_arr_time', '')}</div>
-                        </div>
-                        <div class="route-line-graphic">
-                            <div class="route-dot"></div>
-                            <div class="route-bar"></div>
-                            <div class="route-dot"></div>
-                        </div>
-                        <div class="est-stops-col">
-                            <div>{st.session_state.start_stop}</div>
-                            <div>{st.session_state.end_stop}</div>
-                        </div>
-                    </div>
-                </div>
-                """
+                templates["TOP_ITEM"].format(
+                    dep_time=item.get("dep_time", ""),
+                    line_bg_class=line_bg_class,
+                    line_str=line_str,
+                    destination=item.get("destination", ""),
+                    rem_color_class=rem_color_class,
+                    minute_str=minute_str,
+                    remark_html=remark_html,
+                    status=item.get("status", ""),
+                    arrival_html=arrival_html,
+                    stops_class=stops_class,
+                    stops_str=stops_str if stops_str else "―",
+                    pro_color_class=pro_color_class,
+                    pro_dep_time=item.get("pro_dep_time", ""),
+                    pro_arr_time=item.get("pro_arr_time", ""),
+                    start_stop=st.session_state.start_stop,
+                    end_stop=st.session_state.end_stop,
+                )
             )
         else:
             html_parts.append(
-                '<div class="bus-row-card"><div style="grid-column: 1 / -1; font-size: 1.6rem; color: #AAAAAA; text-align: center;">現在接近中のバスはありません</div></div>'
+                templates["MESSAGE_ROW"].format(
+                    msg_color_class="text-gray",
+                    message="現在接近中のバスはありません",
+                )
             )
 
-    # 3. 区切り線と下段（第2便・第3便）の生成
+    # 3. 下段（第2便・第3便）のHTML組み立て
     if bottom_items:
         html_parts.append('<div class="section-divider"></div>')
         for b_item in bottom_items:
             b_min = b_item.get("delay", "")
-            b_color = "#FFFFFF"
+            b_color_class = "text-white"
             if b_min == "正常運行":
-                b_color = "#4CAF50"
+                b_color_class = "text-green"
             elif b_min == "少し遅れ":
-                b_color = "#FF9800"
+                b_color_class = "text-orange"
             elif re.match(r"約(\d+)分遅れ", b_min):
-                b_color = "#F44336"
+                b_color_class = "text-red"
 
             b_line = b_item.get("line", "")
-            b_bg = "#FF9800" if b_line in ["直行", "急行"] else "#2196F3"
+            b_bg_class = "bg-orange" if b_line in ["直行", "急行"] else "bg-blue"
 
             b_remarks = []
             if b_line in ["直行", "急行"]:
-                b_remarks.append(f'<span style="color:#FF9800;">{b_line}</span>')
+                b_remarks.append(f'<span class="text-orange">{b_line}</span>')
             if b_item.get("info") == -3:
-                b_remarks.append('<span style="color:#F44336;">最終</span>')
+                b_remarks.append('<span class="text-red">最終</span>')
             if b_item.get("starting_stop"):
-                b_remarks.append('<span style="color:#FFFFFF;">始発</span>')
+                b_remarks.append('<span class="text-white">始発</span>')
             b_rem_html = " / ".join(b_remarks)
 
             html_parts.append(
-                f"""
-                <div class="bus-row-card">
-                    <div class="dep-time">{b_item.get('dep_time', '')}</div>
-                    <div><div class="line-box" style="background-color: {b_bg};">{b_line}</div></div>
-                    <div class="dest-name">{b_item.get('destination', '')}</div>
-                    <div class="delay-text" style="color: {b_color};">{b_min}</div>
-                    <div class="remark-text">{b_rem_html}</div>
-                </div>
-                """
+                templates["BOTTOM_ITEM"].format(
+                    dep_time=b_item.get("dep_time", ""),
+                    line_bg_class=b_bg_class,
+                    line_str=b_line,
+                    destination=b_item.get("destination", ""),
+                    rem_color_class=b_color_class,
+                    minute_str=b_min,
+                    remark_html=b_rem_html,
+                )
             )
 
-    clean_html = "\n".join(line.strip() for line in "".join(html_parts).splitlines() if line.strip())
+    # インデントを除去してHTMLとして描画
+    clean_html = "\n".join(
+        line.strip() for line in "".join(html_parts).splitlines() if line.strip()
+    )
     st.markdown(clean_html, unsafe_allow_html=True)
 
-    # フッター（最終更新時刻と手動更新・JSON確認）
+    # フッター
     f_col1, f_col2, f_col3 = st.columns([6, 2, 2])
     with f_col1:
-        mode_str = "🧪 ダミーデータ表示中" if st.session_state.use_dummy else f"最終取得: {now_jst.strftime('%H:%M:%S')} (所要 {elapsed:.1f}秒)"
+        mode_str = (
+            "🧪 ダミーデータ表示中"
+            if st.session_state.use_dummy
+            else f"最終取得: {now_jst.strftime('%H:%M:%S')} (所要 {elapsed:.1f}秒)"
+        )
         st.caption(f"⏱ {mode_str} ／ 20秒ごとに自動更新")
     with f_col2:
         if st.button("🔄 手動更新", use_container_width=True, key="signage_refresh"):
